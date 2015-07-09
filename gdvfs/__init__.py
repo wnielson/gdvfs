@@ -149,6 +149,11 @@ class Node:
                 try:
                     files = self._drive.service.files().list(**param).execute()
                 except Exception, e:
+                    # TODO: Fix errors here, including:
+                    #
+                    #   - "SSL routines:SSL3_GET_RECORD:block cipher pad is wrong"
+                    #   - "The read operation timed out"
+                    #   - "SSL routines:SSL3_GET_RECORD:wrong version number"
                     log.error("Error: %s" % str(e))
                     continue
 
@@ -386,8 +391,9 @@ class GDVFS(Operations):
     access      = None
 
     def _remove_handle(self, path):
-        self.opened[path].close()
-        self.opened.pop(path, None)
+        if self.opened.has_key(path):
+            self.opened[path].close()
+            self.opened.pop(path, None)
 
     def read(self, path, length, offset, fh):
         log.debug("read: %s:%d -> %d +%d" % (path, fh, offset, length))
@@ -436,6 +442,8 @@ class GDVFS(Operations):
 
                             # Try again
                             continue
+                    except Exception, e:
+                        log.error("Error opening url: %s" % str(e))
 
                     # Give up
                     raise FuseOSError(errno.EIO)
