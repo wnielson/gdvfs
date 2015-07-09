@@ -19,3 +19,12 @@ If the original video is named `video.mkv`, then the following files will be ava
   * `video-360p.flv`
   * `video-360p.mp4`
   * `video-360p.webm`
+
+
+## Installation
+
+Run `python setup.py` to install.  You also need to have FUSE installed.
+
+## Setup
+
+Most of the configuration is done via a configuration file.  Look at `gdvfs.conf` for example options.
