@@ -106,11 +106,11 @@ class Node:
         if self.video_attribs and self.video_attribs.has_key("bytes"):
             bytes = self.video_attribs["bytes"]
         else:
+            # Directories default to 4096 bytes
             bytes = int(self.attribs.get("fileSize", 4096))
 
         try:
             timestamp = calendar.timegm(time.strptime(self.attribs.get("modifiedDate").replace("Z", "GMT"), '%Y-%m-%dT%H:%M:%S.%f%Z'))
-            #user      = getpwnam(getpass.getuser())
         except:
             if self.id == "root":
                 # TODO: Better choice here?
@@ -136,13 +136,21 @@ class Node:
         return self.children
 
     def update(self):
+        """
+        Get all children of this node.
+        """
         if time.time()-self.updated < self._drive.CACHE_TIME:
+            # Use the cached data
+            log.debug("Using cached data for node: %s" % self.title)
             return
 
-        service = self._drive.get_service()
+        log.debug("Refreshing data for node: %s" % self.title)
 
-        results = []
-        page_token = None
+        service     = self._drive.get_service()
+        results     = []
+        page_token  = None
+
+        # Loop over pages
         while True:
             try:
                 param = {
@@ -168,13 +176,9 @@ class Node:
             except errors.HttpError, error:
                 log.error('An error occurred: %s' % error)
                 break
-        
-        # First, we remove items that are no longer here
+
+        # List of titles of all children, as reported by Google
         all_children = [n['title'] for n in results]
-        for title in self.children.keys():
-            if title not in all_children:
-                print "Removing child: %s" % title
-                self.children.pop(title)
 
         # Now add or update the children
         for child in results:
@@ -186,13 +190,20 @@ class Node:
                 # Add
                 self.children[child["title"]] = Node(child["id"], child["title"], self._drive)
 
-            self.children[child["title"]].attribs = child
+            node = self.children[child["title"]]
 
-            if self.children[child["title"]].attribs.has_key("videoMediaMetadata"):
-                # This is a video
+            # Set the attributes for this node
+            node.attribs = child
+
+            # If the "videoMediaMetadata" key is present, then this is a video
+            if node.attribs.has_key("videoMediaMetadata"):
+                # Since this is a video, we need to do a few things:
+                #   (1) Change this node from a video to a directory
+                #   (2) Add this video as a child to the directory node
+                #   (3) Add alternate videos as children to the directory node
 
                 # Check for alternate videos
-                videos = self._drive.get_urls_for_docid(self.children[child["title"]].id)
+                videos = self._drive.get_urls_for_docid(node.id)
                 log.debug("Found %d videos for '%s'" % (len(videos), self.title))
 
                 # Remove the original file...
@@ -205,8 +216,19 @@ class Node:
                     for video in videos:
                         title = "%s-%sp.%s" % (base_title, video.get("height"), video.get("extension").lower())
 
-                        self.children[title] = Node(child["id"], title, self._drive, video)
-                        self.children[title].attribs = child
+                        # Add this fake child to the list of children present
+                        all_children.append(title)
+
+                        if not self.children.has_key(title):
+                            log.debug("Adding child: %s" % title)
+                            self.children[title] = Node(child["id"], title, self._drive, video)
+                            self.children[title].attribs = child
+
+        # Remove any children that are no longer present
+        for title in self.children.keys():
+            if title not in all_children:
+                log.info("Removing child: %s" % title)
+                self.children.pop(title)
 
         self.updated = time.time()
 
@@ -304,7 +326,7 @@ class Drive(object):
     def list_dir(self, path):
         segments = full_path_split(path)
         count    = len(segments)
-        listing = {}
+        listing  = {}
 
         # Lock
         self._tree_lock.acquire()
@@ -621,6 +643,8 @@ def main():
             kwargs.update({
                 "volname":          kwargs["fsname"],
                 "kill_on_unmount":  True,
+                "noappledouble":    True,
+                "noapplexattr":     True,
                 "local":            config.getboolean(CONFIG_SECTION, "local")
             })
 
