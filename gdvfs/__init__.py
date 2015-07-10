@@ -21,6 +21,8 @@ import pwd
 import re
 import stat
 import sys
+import thread
+import threading
 import time
 import urllib
 import urllib2
@@ -51,7 +53,7 @@ CONFIG_DEFAULT  = {
     "redirect_uri":     "urn:ietf:wg:oauth:2.0:oob"
 }
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
@@ -133,6 +135,8 @@ class Node:
         if time.time()-self.updated < self._drive.CACHE_TIME:
             return
 
+        service = self._drive.get_service()
+
         results = []
         page_token = None
         while True:
@@ -147,7 +151,7 @@ class Node:
                     param['pageToken'] = page_token
 
                 try:
-                    files = self._drive.service.files().list(**param).execute()
+                    files = service.files().list(**param).execute()
                 except Exception, e:
                     # TODO: Fix errors here, including:
                     #
@@ -155,6 +159,7 @@ class Node:
                     #   - "The read operation timed out"
                     #   - "SSL routines:SSL3_GET_RECORD:wrong version number"
                     log.error("Error: %s" % str(e))
+                    print "thread=%s" % thread.get_ident()
                     continue
 
                 results.extend(files['items'])
@@ -242,6 +247,9 @@ class Node:
 
 
 class Drive(object):
+    """
+    TODO: This needs to be made thread safe
+    """
     PROTOCOL    = 'https://'
 
     def __init__(self, config):
@@ -253,15 +261,28 @@ class Drive(object):
                                               config.get(CONFIG_SECTION, "oauth_scope"),
                                               redirect_uri=config.get(CONFIG_SECTION, "redirect_uri"))
         
-        self.http          = None
-        self.service       = None
+        # Each thread needs to have it's own http and service instance
+        self._http          = {}
+        self._service       = {}
 
-        self.build_service(query=True)
-
-        self._tree = Node('root', 'root', self)
+        self._tree      = Node('root', 'root', self)
+        self._tree_lock = threading.RLock()
 
         # File and folder data is cache duration, in seconds
         self.CACHE_TIME = config.getint(CONFIG_SECTION, "cache_duration")
+
+    def get_http(self):
+        tid = thread.get_ident()
+        if not self._http.has_key(tid):
+            self._service[tid], self._http[tid] = self.build_service()
+        return self._http[tid]
+
+    def get_service(self):
+        tid = thread.get_ident()
+        if not self._service.has_key(tid):
+            self._service[tid], self._http[tid] = self.build_service()
+        return self._service[tid]
+
 
     def build_service(self, query=False):
         if self._creds is not None and self._creds.invalid:
@@ -275,18 +296,21 @@ class Drive(object):
                 self._storage.put(self._creds)
 
         # Setup HTTP
-        self.http = httplib2.Http(timeout=5)
-        self._creds.authorize(self.http)
+        http = httplib2.Http(timeout=5)
+        self._creds.authorize(http)
 
         # Setup the service
-        self.service = build('drive', 'v2', http=self.http)
+        service = build('drive', 'v2', http=http)
 
-        if query:
-            self.service.about().get().execute()
+        return service, http
 
     def list_dir(self, path):
         segments = full_path_split(path)
         count    = len(segments)
+        listing = {}
+
+        # Lock
+        self._tree_lock.acquire()
 
         parent = self._tree
         for i in range(len(segments)):
@@ -298,16 +322,21 @@ class Drive(object):
             parent   = children.get(segment)
         
         if parent:
-            return parent.get_children()
+            listing = parent.get_children()
 
+        # Lock
+        self._tree_lock.release()
+
+        return listing
 
     def get_urls_for_docid(self, docid):
         params  = urllib.urlencode({'docid': docid})
         url     = self.PROTOCOL+'docs.google.com/get_video_info?docid='+str(docid)
+        http    = self.get_http()
 
         for i in range(3):
             try:
-                status, response_data = self.http.request(url, "GET")
+                status, response_data = http.request(url, "GET")
                 break
             except Exception, e:
                 log.error("Error get_urls_for_docid: '%s' ... trying again" % str(e))
@@ -465,6 +494,7 @@ class GDVFS(Operations):
             # Keep track of position in opened handle
             self.opened[path]._pos += amt
         except Exception, e:
+            print "thread=%s" % thread.get_ident()
             log.error("Read error: %s" % str(e))
 
             # TODO: Handle this read error better...
@@ -533,6 +563,8 @@ def usage():
 
 def main():
     print "gdvfs version %s, Copyright (C) %s" % (__version__, __author__)
+
+    print "Main thread=%s" % thread.get_ident()
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], "fhc:", ["foreground", "help", "config="])
