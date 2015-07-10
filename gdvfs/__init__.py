@@ -52,6 +52,7 @@ CONFIG_DEFAULT  = {
     "foreground":       "False",
     "direct_io":        "True",
     "allow_other":      "False",
+    "allow_root":       "False",
     "local":            "False",
     "volicon":          ""
 }
@@ -608,19 +609,19 @@ def main():
         kwargs = {
             "ro":               True,
             "async_read":       True,
-            "allow_root":       True,
-
+            
             "foreground":       foreground,
             "fsname":           config.get(CONFIG_SECTION,          "mount_name"),
             "direct_io":        config.getboolean(CONFIG_SECTION,   "direct_io"),
-            "allow_other":      config.getboolean(CONFIG_SECTION,   "allow_other")
+            "allow_other":      config.getboolean(CONFIG_SECTION,   "allow_other"),
+            "allow_root":       config.getboolean(CONFIG_SECTION,   "allow_root"),
         }
 
         if fuse.system() == "Darwin":
             kwargs.update({
                 "volname":          kwargs["fsname"],
                 "kill_on_unmount":  True,
-                "local":            config.getboolean(CONFIG_SECTION, "local"),
+                "local":            config.getboolean(CONFIG_SECTION, "local")
             })
 
             volicon = config.get(CONFIG_SECTION, "volicon")

@@ -56,6 +56,10 @@ log_path = ./gdvfs.log
 # use it
 #allow_other = False
 
+# Similar to `allow_other`, but only enabled for root user.
+#
+#allow_root = False
+
 # This is enabled by default.  If you are having performance issues, try
 # disabling it.
 #
