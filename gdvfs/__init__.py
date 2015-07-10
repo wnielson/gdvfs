@@ -32,6 +32,8 @@ from oauth2client.tools import run
 # Fuse
 import fuse
 
+import pdb
+
 log = logging.getLogger("gdvfs")
 
 CONFIG_SECTION  = "gdvfs"
@@ -57,7 +59,7 @@ CONFIG_DEFAULT  = {
     "volicon":          ""
 }
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
@@ -80,6 +82,10 @@ class Node:
 
     TODO: Nestle encodes under a parent directory named after the real video.
     """
+
+    FOLDER_MIMETYPE = "application/vnd.google-apps.folder"
+    FOLDER_BYTES    = 4096
+
     def __init__(self, id, title, drive, video_attribs=None):
         self.id       = id
         self.title    = title
@@ -99,6 +105,7 @@ class Node:
             self.update()
 
         if self.video_attribs and not self.video_attribs.has_key("bytes"):
+            log.debug("Getting file size for video: %s" % self.title)
             res = urllib.urlopen(self.video_attribs.get("url"))
             self.video_attribs["bytes"] = int(res.headers.get("content-length", 0))
 
@@ -107,7 +114,7 @@ class Node:
             bytes = self.video_attribs["bytes"]
         else:
             # Directories default to 4096 bytes
-            bytes = int(self.attribs.get("fileSize", 4096))
+            bytes = int(self.attribs.get("fileSize", self.FOLDER_BYTES))
 
         try:
             timestamp = calendar.timegm(time.strptime(self.attribs.get("modifiedDate").replace("Z", "GMT"), '%Y-%m-%dT%H:%M:%S.%f%Z'))
@@ -127,7 +134,7 @@ class Node:
 
     def _get_mode(self):
         # From: https://github.com/thejinx0r/node-gdrive-fuse/blob/master/src/folder.coffee
-        if self.attribs.get("mimeType") == "application/vnd.google-apps.folder" or self.id == "root":
+        if self.attribs.get("mimeType") == self.FOLDER_MIMETYPE or self.id == "root":
             return 0o40777
         return 0o100777
 
@@ -150,85 +157,93 @@ class Node:
         results     = []
         page_token  = None
 
-        # Loop over pages
-        while True:
-            try:
-                param = {
-                    "q":            "'%s' in parents and trashed=false" % self.id,
-                    "fields":       "items(id,mimeType,title,createdDate,modifiedDate,fileSize,videoMediaMetadata)",
-                    "maxResults":   1000
-                }
 
-                if page_token:
-                    param['pageToken'] = page_token
+        if self.attribs.has_key("videoMediaMetadata") and not self.children:
+            # Check for alternate videos
+            videos = self._drive.get_urls_for_docid(self.id)
+            log.debug("Found %d videos for '%s'" % (len(videos), self.title))
 
+            if len(videos) > 0:
+                base_title, old_ext = os.path.splitext(self.title)
+
+                # Add the alternate formats
+                for video in videos:
+                    title = "%s-%sp.%s" % (base_title, video.get("height"), video.get("extension").lower())
+
+                    if not self.children.has_key(title):
+                        log.debug("Adding child: %s" % title)
+                        self.children[title] = Node(self.id, title, self._drive, video)
+                        self.children[title].attribs = self.attribs.copy()
+                        self.children[title].attribs.update({
+                            "mimeType": self.attribs.get("originalMimeType")
+                        })
+                        self.children[title].attribs.pop("bytes", 0)
+
+        else:
+            # Loop over pages
+            while True:
                 try:
-                    files = service.files().list(**param).execute()
-                except Exception, e:
-                    log.error("Error: %s" % str(e))
-                    continue
+                    param = {
+                        "q":            "'%s' in parents and trashed=false" % self.id,
+                        "fields":       "items(id,mimeType,title,createdDate,modifiedDate,fileSize,videoMediaMetadata)",
+                        "maxResults":   1000
+                    }
 
-                results.extend(files['items'])
+                    if page_token:
+                        param['pageToken'] = page_token
 
-                page_token = files.get('nextPageToken')
-                if not page_token:
+                    try:
+                        files = service.files().list(**param).execute()
+                    except Exception, e:
+                        log.error("Error: %s" % str(e))
+                        continue
+
+                    results.extend(files['items'])
+
+                    page_token = files.get('nextPageToken')
+                    if not page_token:
+                        break
+                except errors.HttpError, error:
+                    log.error('An error occurred: %s' % error)
                     break
-            except errors.HttpError, error:
-                log.error('An error occurred: %s' % error)
-                break
 
-        # List of titles of all children, as reported by Google
-        all_children = [n['title'] for n in results]
+            # List of titles of all children, as reported by Google
+            all_children = [n['title'] for n in results]
 
-        # Now add or update the children
-        for child in results:
-            if self.children.has_key(child["title"]):
-                # Update
-                self.children[child["title"]].id    = child["id"]
-                self.children[child["title"]].title = child["title"]
-            else:
-                # Add
-                self.children[child["title"]] = Node(child["id"], child["title"], self._drive)
+            # Now add or update the children
+            for child in results:
+                if self.children.has_key(child["title"]):
+                    # Update
+                    self.children[child["title"]].id    = child["id"]
+                    self.children[child["title"]].title = child["title"]
+                else:
+                    # Add
+                    self.children[child["title"]] = Node(child["id"], child["title"], self._drive)
 
-            node = self.children[child["title"]]
+                node = self.children[child["title"]]
 
-            # Set the attributes for this node
-            node.attribs = child
+                # Set the attributes for this node
+                node.attribs = child.copy()
 
-            # If the "videoMediaMetadata" key is present, then this is a video
-            if node.attribs.has_key("videoMediaMetadata"):
-                # Since this is a video, we need to do a few things:
-                #   (1) Change this node from a video to a directory
-                #   (2) Add this video as a child to the directory node
-                #   (3) Add alternate videos as children to the directory node
+                # If the "videoMediaMetadata" key is present, then this is a video
+                if node.attribs.has_key("videoMediaMetadata"):
+                    # Since this is a video, we need to do a few things:
+                    #   (1) Change this node from a video to a directory
+                    #   (2) Add this video as a child to the directory node
+                    #   (3) Add alternate videos as children to the directory node
 
-                # Check for alternate videos
-                videos = self._drive.get_urls_for_docid(node.id)
-                log.debug("Found %d videos for '%s'" % (len(videos), self.title))
-
-                # Remove the original file...
-                self.children.pop(child["title"])
-                
-                if len(videos) > 0:
-                    base_title, old_ext = os.path.splitext(child["title"])
-
-                    # Add the alternate formats
-                    for video in videos:
-                        title = "%s-%sp.%s" % (base_title, video.get("height"), video.get("extension").lower())
-
-                        # Add this fake child to the list of children present
-                        all_children.append(title)
-
-                        if not self.children.has_key(title):
-                            log.debug("Adding child: %s" % title)
-                            self.children[title] = Node(child["id"], title, self._drive, video)
-                            self.children[title].attribs = child
-
-        # Remove any children that are no longer present
-        for title in self.children.keys():
-            if title not in all_children:
-                log.info("Removing child: %s" % title)
-                self.children.pop(title)
+                    # Turn this video into a directory
+                    node.attribs.update({
+                        "originalMimeType": node.attribs.get("mimeType"),
+                        "fileSize":         self.FOLDER_BYTES,
+                        "mimeType":         self.FOLDER_MIMETYPE
+                    })
+                else:
+                    # Remove any children that are no longer present
+                    for title in self.children.keys():
+                        if title not in all_children:
+                            log.info("Removing child: %s" % title)
+                            self.children.pop(title)
 
         self.updated = time.time()
 
