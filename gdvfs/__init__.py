@@ -608,6 +608,7 @@ def main():
         kwargs = {
             "ro":               True,
             "async_read":       True,
+            "allow_root":       True,
 
             "foreground":       foreground,
             "fsname":           config.get(CONFIG_SECTION,          "mount_name"),
