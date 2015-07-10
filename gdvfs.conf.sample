@@ -1,0 +1,71 @@
+[gdvfs]
+
+# Location to mount file system to.
+#
+mount_dir = /Volumes/Google
+
+# File extensions to include in directory listings.
+#
+include_formats = mp4,flv,webm
+
+# Location to log information to.
+#
+log_path = ./gdvfs.log
+
+# Time, in seconds, to cache directory listings.  If changes are not made very
+# often, then setting this to a higher value will increase responsiveness
+# while browsing the file system.
+#
+#cache_duration = 30
+
+# Name to show for the disk when mounted, for aesthetics only.
+#
+#mount_name = "GDVFS"
+
+# Location to store OAuth credentials.
+#
+#oath_storage = ~/.gdvfs.auth
+
+# Client ID and secret from Google.  By default, this uses the GDVFS ID and
+# secret, but you can override these settings if you wish to use your own.
+#
+#client_id = 
+#client_secret = 
+
+# Enable debugging mode
+#debug = False
+
+# Run in the foreground (don't daemonize)
+#
+#foreground = False
+
+################################################################################
+#
+#  Fuse Options
+#
+#    For more details, see the following links for information on
+#    what these options do:
+#
+#      * OS X:  https://github.com/osxfuse/osxfuse/wiki/Mount-options
+#      * Linux: http://manpages.ubuntu.com/manpages/precise/man8/mount.fuse.8.html
+#
+################################################################################
+
+# By default, only the user that mounts the file system can use it.  This option
+# makes it available to everyone, but you typically need to be admin (root) to
+# use it
+#allow_other = False
+
+# This is enabled by default.  If you are having performance issues, try
+# disabling it.
+#
+#direct_io = True
+
+# Causes the file system to appear as an attached disk. OS X only.
+#
+#local = False
+
+# Custom volume icon.  OS X only.  This is a good example:
+# http://www.deviantart.com/art/Google-Drive-Icon-298243611
+#
+#volicon = "/path/to/icon.icns"

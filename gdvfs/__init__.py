@@ -3,6 +3,7 @@
     gdvfs - Google Drive Video File System for FUSE
     (C) 2015 - Weston Nielson <wnielson@gmail.com>
 """
+# Standard library modules
 import calendar
 import ConfigParser
 import errno
@@ -29,7 +30,7 @@ from oauth2client.file import Storage
 from oauth2client.tools import run
 
 # Fuse
-from fuse import FUSE, FuseOSError, Operations
+import fuse
 
 log = logging.getLogger("gdvfs")
 
@@ -37,17 +38,26 @@ CONFIG_SECTION  = "gdvfs"
 CONFIG_DEFAULT  = {
     "include_formats":  "mp4,flv,webm",
     "cache_duration":   "30",
-    "foreground":       "False",
-    "direct_io":        "False",
+
+    "mount_name":       "GDVFS",
+    "mount_dir":        "./gdvfs",
+    
     "debug":            "False",
+
     "oath_storage":     "~/.gdvfs.auth",
     "oauth_scope":      "https://www.googleapis.com/auth/drive.readonly",
     "client_id":        "356235268653-l89ucov34t3li7fg1g0rv8ppmetcgj46.apps.googleusercontent.com",
     "client_secret":    "rlls7k6VSjuM3r-nwrwq4DYv",
-    "redirect_uri":     "urn:ietf:wg:oauth:2.0:oob"
+    "redirect_uri":     "urn:ietf:wg:oauth:2.0:oob",
+
+    "foreground":       "False",
+    "direct_io":        "True",
+    "allow_other":      "False",
+    "local":            "False",
+    "volicon":          ""
 }
 
-__version__ = "0.1.2"
+__version__ = "0.1.4"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
@@ -147,13 +157,7 @@ class Node:
                 try:
                     files = service.files().list(**param).execute()
                 except Exception, e:
-                    # TODO: Fix errors here, including:
-                    #
-                    #   - "SSL routines:SSL3_GET_RECORD:block cipher pad is wrong"
-                    #   - "The read operation timed out"
-                    #   - "SSL routines:SSL3_GET_RECORD:wrong version number"
                     log.error("Error: %s" % str(e))
-                    print "thread=%s" % thread.get_ident()
                     continue
 
                 results.extend(files['items'])
@@ -241,9 +245,6 @@ class Node:
 
 
 class Drive(object):
-    """
-    TODO: This needs to be made thread safe
-    """
     PROTOCOL    = 'https://'
 
     def __init__(self, config):
@@ -283,11 +284,13 @@ class Drive(object):
             self._creds = run(self._flow, self._storage)
 
         while self._creds is None:
-            print ""
-            print "Go to URL:", self._flow.step1_get_authorize_url()
-            self._creds = self._flow.step2_exchange(raw_input("Code: ").strip())
-            if self._creds:
-                self._storage.put(self._creds)
+            print "\nGo to the following URL and copy-paste the code below:\n\n", self._flow.step1_get_authorize_url()
+            try:
+                self._creds = self._flow.step2_exchange(raw_input("\nCode: ").strip())
+                if self._creds:
+                    self._storage.put(self._creds)
+            except FlowExchangeError:
+                print "The code was invalid, please try again"
 
         # Setup HTTP
         http = httplib2.Http(timeout=5)
@@ -392,7 +395,7 @@ class Drive(object):
                 })
         return mediaUrls
 
-class GDVFS(Operations):
+class GDVFS(fuse.Operations):
     def __init__(self, drive):
         self.drive  = drive
 
@@ -469,14 +472,14 @@ class GDVFS(Operations):
                         log.error("Error opening url: %s" % str(e))
 
                     # Give up
-                    raise FuseOSError(errno.EIO)
+                    raise fuse.FuseOSError(errno.EIO)
                 
                 # Cache the opened URL and set the offset
                 fh._pos             = offset
                 self.opened[path]   = fh
             else:
                 # Emulate "I/O error"
-                raise FuseOSError(errno.EIO)
+                raise fuse.FuseOSError(errno.EIO)
 
         try:
             # Get the data
@@ -488,14 +491,13 @@ class GDVFS(Operations):
             # Keep track of position in opened handle
             self.opened[path]._pos += amt
         except Exception, e:
-            print "thread=%s" % thread.get_ident()
             log.error("Read error: %s" % str(e))
 
             # TODO: Handle this read error better...
             self._remove_handle(path)
 
             # Emulate "I/O error"
-            raise FuseOSError(errno.EIO)
+            raise fuse.FuseOSError(errno.EIO)
 
         return data
 
@@ -522,7 +524,7 @@ class GDVFS(Operations):
             return self.drive._tree.lstat()
         
         log.debug("Unknown path: %s" % path)
-        raise FuseOSError(errno.ENOENT)
+        raise fuse.FuseOSError(errno.ENOENT)
 
 def setup_logging(config, foreground):
     stream_handler = logging.StreamHandler(sys.stdout)
@@ -547,29 +549,29 @@ def setup_logging(config, foreground):
 
 
 def usage():
-    print "\nUsage:\n"
+    print "Usage:\n"
     print "  %s [options]" % sys.argv[0]
     print "\nOptions:\n"
-    print "  -f (--foreground) : Run in the foreground (don't daemonize)"
-    print "  -c (--config=)    : Path to config file (Default: ~/.gdvfs)"
-    print "  -h (--help)       : Print out this help information"
+    print "  -a (--auth)        : Perform OAuth authentication with Google"
+    print "  -f (--foreground)  : Run in the foreground (don't daemonize)"
+    print "  -c (--config=)     : Path to config file (Default: ~/.gdvfs)"
+    print "  -h (--help)        : Print out this help information"
     print "\n"
 
 def main():
-    print "gdvfs version %s, Copyright (C) %s" % (__version__, __author__)
-
-    print "Main thread=%s" % thread.get_ident()
+    print "gdvfs version %s, Copyright (C) %s\n" % (__version__, __author__)
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "fhc:", ["foreground", "help", "config="])
+        opts, args = getopt.getopt(sys.argv[1:], "afhc:", ["foreground", "help", "config="])
     except getopt.GetoptError as err:
         # print help information and exit:
         print str(err) # will print something like "option -a not recognized"
         usage()
         sys.exit(2)
 
-    config_paths = ["./gdvfs.conf", "~/.gdvfs.conf", "/etc/default/gdvfs"]
+    config_paths = ["./gdvfs.conf", "~/.gdvfs.conf"]
     foreground   = False
+    do_auth      = False
 
     for o, a in opts:
         if o in ("-h", "--help"):
@@ -579,6 +581,8 @@ def main():
             config_paths.push(0, a)
         elif o in ("-f", "--foreground"):
             foreground = True
+        elif o in ("-a", "--auth"):
+            do_auth = True
 
     config          = ConfigParser.SafeConfigParser(CONFIG_DEFAULT)
     config_paths    = [os.path.expanduser(pth) for pth in config_paths]
@@ -588,14 +592,42 @@ def main():
 
     log.debug("Loaded config from: %s" % str(loaded_configs))
 
-    mount_dir   = config.get(CONFIG_SECTION, "mount_dir")
-    direct_io   = config.getboolean(CONFIG_SECTION, "direct_io")
-
     drive = Drive(config)
 
+    if do_auth:
+        print "Attempting OAuth authentication"
+        drive.build_service()
+        return
+
     try:
+        mount_dir = config.get(CONFIG_SECTION, "mount_dir")
+
         print "Mounting to: %s" % mount_dir
-        FUSE(GDVFS(drive), mount_dir, foreground=foreground, direct_io=direct_io)
+        if not os.path.exists(mount_dir):
+            os.mkdir(mount_dir)
+
+        kwargs = {
+            "ro":               True,
+            "async_read":       True,
+
+            "foreground":       foreground,
+            "fsname":           config.get(CONFIG_SECTION,          "mount_name"),
+            "direct_io":        config.getboolean(CONFIG_SECTION,   "direct_io"),
+            "allow_other":      config.getboolean(CONFIG_SECTION,   "allow_other")
+        }
+
+        if fuse.system() == "Darwin":
+            kwargs.update({
+                "volname":          kwargs["fsname"],
+                "kill_on_unmount":  True,
+                "local":            config.getboolean(CONFIG_SECTION, "local"),
+            })
+
+            volicon = config.get(CONFIG_SECTION, "volicon")
+            if volicon:
+                kwargs["volicon"] = volicon
+
+        fuse.FUSE(GDVFS(drive), mount_dir, **kwargs)
     except KeyboardInterrupt:
         print "Quitting"
     except Exception, e:
