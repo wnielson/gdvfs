@@ -2,7 +2,7 @@
 
 # Location to mount file system to.
 #
-mount_dir = /Volumes/Google
+mount_dir = /mnt/gdvfs
 
 # File extensions to include in directory listings.
 #

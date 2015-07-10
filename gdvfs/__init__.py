@@ -40,7 +40,6 @@ CONFIG_DEFAULT  = {
     "cache_duration":   "30",
 
     "mount_name":       "GDVFS",
-    "mount_dir":        "./gdvfs",
     
     "debug":            "False",
 
