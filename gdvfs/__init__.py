@@ -587,7 +587,7 @@ def setup_logging(config, foreground):
 
 def usage():
     print "Usage:\n"
-    print "  %s [options]" % sys.argv[0]
+    print "  %s [options]" % os.path.basename(sys.argv[0])
     print "\nOptions:\n"
     print "  -a (--auth)        : Perform OAuth authentication with Google"
     print "  -f (--foreground)  : Run in the foreground (don't daemonize)"
