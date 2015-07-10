@@ -1,13 +1,7 @@
 #!/usr/bin/env python
 """
     gdvfs - Google Drive Video File System for FUSE
-
-    (c) 2015 - Weston Nielson <wnielson@gmail.com>
-
-    Install:
-        apt-get install fuse
-        pip install fusepy
-        pip install google-api-python-client
+    (C) 2015 - Weston Nielson <wnielson@gmail.com>
 """
 import calendar
 import ConfigParser

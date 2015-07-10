@@ -5,6 +5,8 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
+import gdvfs
+
 here = path.abspath(path.dirname(__file__))
 
 # Get the long description from the relevant file
@@ -17,7 +19,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version='0.1.2',
+    version=gdvfs.__version__,
 
     description='A FUSE file system for Google Drive videos',
     long_description=long_description,
