@@ -7,14 +7,11 @@
 import calendar
 import ConfigParser
 import errno
-import getpass
 import getopt
 import httplib2
 import logging
 import os
-import pwd
 import re
-import stat
 import sys
 import thread
 import threading
