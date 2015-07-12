@@ -32,25 +32,19 @@ from oauth2client.tools import run
 # Fuse
 import fuse
 
-import pdb
-
 log = logging.getLogger("gdvfs")
 
 CONFIG_SECTION  = "gdvfs"
 CONFIG_DEFAULT  = {
     "include_formats":  "mp4,flv,webm",
     "cache_duration":   "30",
-
     "mount_name":       "GDVFS",
-    
     "debug":            "False",
-
     "oath_storage":     "~/.gdvfs.auth",
     "oauth_scope":      "https://www.googleapis.com/auth/drive.readonly",
     "client_id":        "356235268653-l89ucov34t3li7fg1g0rv8ppmetcgj46.apps.googleusercontent.com",
     "client_secret":    "rlls7k6VSjuM3r-nwrwq4DYv",
     "redirect_uri":     "urn:ietf:wg:oauth:2.0:oob",
-
     "foreground":       "False",
     "direct_io":        "True",
     "allow_other":      "False",
