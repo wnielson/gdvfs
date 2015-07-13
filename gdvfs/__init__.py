@@ -50,7 +50,7 @@ CONFIG_DEFAULT  = {
     "volicon":          ""
 }
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
@@ -149,8 +149,11 @@ class Node:
         page_token  = None
 
 
-        if self.attribs.has_key("videoMediaMetadata") and not self.children:
-            # Check for alternate videos
+        if self.attribs.has_key("videoMediaMetadata"):
+            # Remove all videos
+            self.children = []
+
+            # Check for current alternate videos
             videos = self._drive.get_urls_for_docid(self.id)
             log.debug("Found %d videos for '%s'" % (len(videos), self.title))
 
@@ -169,7 +172,6 @@ class Node:
                             "mimeType": self.attribs.get("originalMimeType")
                         })
                         self.children[title].attribs.pop("bytes", 0)
-
         else:
             # Loop over pages
             while True:
