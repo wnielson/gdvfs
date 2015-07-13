@@ -151,7 +151,7 @@ class Node:
 
         if self.attribs.has_key("videoMediaMetadata"):
             # Remove all videos
-            self.children = []
+            self.children.clear()
 
             # Check for current alternate videos
             videos = self._drive.get_urls_for_docid(self.id)
