@@ -4,6 +4,10 @@
 #
 mount_dir = /mnt/gdvfs
 
+# Include the original video file.
+#
+include_original = True
+
 # File extensions to include in directory listings.
 #
 include_formats = mp4,flv,webm

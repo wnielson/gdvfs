@@ -34,6 +34,7 @@ log = logging.getLogger("gdvfs")
 CONFIG_SECTION  = "gdvfs"
 CONFIG_DEFAULT  = {
     "include_formats":  "mp4,flv,webm",
+    "include_original": "True",
     "cache_duration":   "30",
     "mount_name":       "GDVFS",
     "debug":            "False",
@@ -50,7 +51,7 @@ CONFIG_DEFAULT  = {
     "volicon":          ""
 }
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
@@ -103,9 +104,11 @@ class Node:
 
         if self.video_attribs and self.video_attribs.has_key("bytes"):
             bytes = self.video_attribs["bytes"]
+        elif self.attribs.has_key("originalFileSize"):
+            bytes = int(self.attribs.get("originalFileSize") or self.FOLDER_BYTES)
         else:
             # Directories default to 4096 bytes
-            bytes = int(self.attribs.get("fileSize", self.FOLDER_BYTES))
+            bytes = int(self.attribs.get("fileSize") or self.FOLDER_BYTES)
 
         try:
             timestamp = calendar.timegm(time.strptime(self.attribs.get("modifiedDate").replace("Z", "GMT"), '%Y-%m-%dT%H:%M:%S.%f%Z'))
@@ -129,6 +132,11 @@ class Node:
             return 0o40777
         return 0o100777
 
+    def get_video_url(self):
+        if self.video_attribs:
+            return self.video_attribs.get("url", "")
+        return self.attribs.get("downloadUrl", "")
+
     def get_children(self):
         self.update()
         return self.children
@@ -150,6 +158,8 @@ class Node:
 
 
         if self.attribs.has_key("videoMediaMetadata"):
+            # This is a video, not a directory
+
             # Remove all videos
             self.children.clear()
 
@@ -165,20 +175,38 @@ class Node:
                     title = "%s-%sp.%s" % (base_title, video.get("height"), video.get("extension").lower())
 
                     if not self.children.has_key(title):
+                        # If this is a new video, add it
                         log.debug("Adding child: %s" % title)
+
+                        # Create the new node
                         self.children[title] = Node(self.id, title, self._drive, video)
                         self.children[title].attribs = self.attribs.copy()
+
+                        # We need to change the mimetype and bytes so that this node
+                        # appears as a video and not a directory
                         self.children[title].attribs.update({
                             "mimeType": self.attribs.get("originalMimeType")
                         })
                         self.children[title].attribs.pop("bytes", 0)
+
+            if self._drive._config.getboolean(CONFIG_SECTION, "include_original"):
+                log.debug("Adding original video")
+                self.children[self.title] = Node(self.id, self.title, self._drive)
+                self.children[self.title].attribs = self.attribs.copy()
+                self.children[self.title].attribs.update({
+                    "mimeType": self.attribs.get("originalMimeType"),
+                    "fileSize": self.attribs.get("originalfileSize")
+                })
+
         else:
+            # This is a directory
+
             # Loop over pages
             while True:
                 try:
                     param = {
                         "q":            "'%s' in parents and trashed=false" % self.id,
-                        "fields":       "items(id,mimeType,title,createdDate,modifiedDate,fileSize,videoMediaMetadata)",
+                        "fields":       "items(id,mimeType,title,createdDate,modifiedDate,fileSize,videoMediaMetadata,downloadUrl)",
                         "maxResults":   1000
                     }
 
@@ -227,10 +255,12 @@ class Node:
 
                     # Turn this video into a directory
                     node.attribs.update({
-                        "originalMimeType": node.attribs.get("mimeType"),
+                        "originalMimeType": child.get("mimeType"),
+                        "originalFileSize": child.get("fileSize"),
                         "fileSize":         self.FOLDER_BYTES,
                         "mimeType":         self.FOLDER_MIMETYPE
                     })
+
                 else:
                     # Remove any children that are no longer present
                     for title in self.children.keys():
@@ -484,8 +514,10 @@ class GDVFS(fuse.Operations):
                 #   b) check to see if a new URL needs to be generated
                 for i in range(2):
                     try:
-                        url  = node.video_attribs.get("url")
-                        hdrs = {'Range': 'bytes=%d-' % (offset)}
+                        url = node.get_video_url()
+                        hdrs = {
+                            'Authorization': 'Bearer %s' % self.drive._creds.access_token,
+                            'Range':         'bytes=%d-' % (offset)}
                         req  = urllib2.Request(url, None, hdrs)
                         fh   = urllib2.urlopen(req)
                         break
