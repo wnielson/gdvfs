@@ -1,0 +1,3 @@
+export RUN_AS=root
+export DAEMON=/usr/local/bin/gdvfs
+export DAEMON_OPTS="-f"
