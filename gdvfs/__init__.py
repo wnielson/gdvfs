@@ -36,6 +36,7 @@ CONFIG_DEFAULT  = {
     "include_formats":  "mp4,flv,webm",
     "include_original": "True",
     "cache_duration":   "30",
+    "root_cache":       "900",
     "mount_name":       "GDVFS",
     "debug":            "False",
     "oath_storage":     "~/.gdvfs.auth",
@@ -51,7 +52,7 @@ CONFIG_DEFAULT  = {
     "volicon":          ""
 }
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
@@ -68,22 +69,25 @@ def full_path_split(path):
     segments.reverse()
     return segments
 
+def get_timestamp(string):
+    return calendar.timegm(time.strptime(string.replace("Z", "GMT"), '%Y-%m-%dT%H:%M:%S.%f%Z'))
+
 class Node:
     """
     Represents either a folder of a file.
-
-    TODO: Nestle encodes under a parent directory named after the real video.
     """
 
     FOLDER_MIMETYPE = "application/vnd.google-apps.folder"
     FOLDER_BYTES    = 4096
 
-    def __init__(self, id, title, drive, video_attribs=None):
+    def __init__(self, id, title, parent, drive, video_attribs=None):
         self.id       = id
         self.title    = title
+        self.parent   = parent
         self.updated  = 0
         self.attribs  = {}
         self.children = {}
+        self.mtime    = 0
 
         self.video_attribs = video_attribs
 
@@ -101,7 +105,6 @@ class Node:
             res = urllib.urlopen(self.video_attribs.get("url"))
             self.video_attribs["bytes"] = int(res.headers.get("content-length", 0))
 
-
         if self.video_attribs and self.video_attribs.has_key("bytes"):
             bytes = self.video_attribs["bytes"]
         elif self.attribs.has_key("originalFileSize"):
@@ -110,19 +113,12 @@ class Node:
             # Directories default to 4096 bytes
             bytes = int(self.attribs.get("fileSize") or self.FOLDER_BYTES)
 
-        try:
-            timestamp = calendar.timegm(time.strptime(self.attribs.get("modifiedDate").replace("Z", "GMT"), '%Y-%m-%dT%H:%M:%S.%f%Z'))
-        except:
-            if self.id == "root":
-                # TODO: Better choice here?
-                timestamp = time.time()
-
         return {
-            "st_atime": timestamp,
+            "st_atime": self.mtime,
             "st_gid":   os.getgid(),        #user.pw_gid,
             "st_uid":   os.getuid(),        #user.pw_uid,
             "st_mode":  self._get_mode(),
-            "st_mtime": timestamp,
+            "st_mtime": self.mtime,
             "st_size":  bytes
         }
 
@@ -131,6 +127,14 @@ class Node:
         if self.attribs.get("mimeType") == self.FOLDER_MIMETYPE or self.id == "root":
             return 0o40777
         return 0o100777
+
+    def _update_mtime(self, mtime):
+        node = self
+        while node != None:
+            if mtime > node.mtime:
+                log.debug("Updating node '%s' mtime to: %s" % (self.title, mtime))
+                node.mtime = mtime
+            node = node.parent
 
     def get_video_url(self):
         if self.video_attribs:
@@ -179,8 +183,9 @@ class Node:
                         log.debug("Adding child: %s" % title)
 
                         # Create the new node
-                        self.children[title] = Node(self.id, title, self._drive, video)
+                        self.children[title] = Node(self.id, title, self, self._drive, video)
                         self.children[title].attribs = self.attribs.copy()
+                        self.children[title]._update_mtime(get_timestamp(self.attribs.get("modifiedDate")))
 
                         # We need to change the mimetype and bytes so that this node
                         # appears as a video and not a directory
@@ -191,12 +196,13 @@ class Node:
 
             if self._drive._config.getboolean(CONFIG_SECTION, "include_original"):
                 log.debug("Adding original video")
-                self.children[self.title] = Node(self.id, self.title, self._drive)
+                self.children[self.title] = Node(self.id, self.title, self, self._drive)
                 self.children[self.title].attribs = self.attribs.copy()
                 self.children[self.title].attribs.update({
                     "mimeType": self.attribs.get("originalMimeType"),
                     "fileSize": self.attribs.get("originalfileSize")
                 })
+                self.children[self.title]._update_mtime(get_timestamp(self.attribs.get("modifiedDate")))
 
         else:
             # This is a directory
@@ -239,12 +245,18 @@ class Node:
                     self.children[child["title"]].title = child["title"]
                 else:
                     # Add
-                    self.children[child["title"]] = Node(child["id"], child["title"], self._drive)
+                    self.children[child["title"]] = Node(child["id"], child["title"], self, self._drive)
 
                 node = self.children[child["title"]]
 
                 # Set the attributes for this node
                 node.attribs = child.copy()
+
+                # Update the mtime for all children
+                try:
+                    node._update_mtime(get_timestamp(node.attribs.get("modifiedDate")))
+                except:
+                    log.error("Couldn't update mtime")
 
                 # If the "videoMediaMetadata" key is present, then this is a video
                 if node.attribs.has_key("videoMediaMetadata"):
@@ -320,7 +332,7 @@ class Drive(object):
         self._http          = {}
         self._service       = {}
 
-        self._tree      = Node('root', 'root', self)
+        self._tree      = Node('root', 'root', None, self)
         self._tree_lock = threading.RLock()
 
         # File and folder data is cache duration, in seconds
