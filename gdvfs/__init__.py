@@ -640,7 +640,7 @@ def main():
             usage()
             sys.exit()
         elif o in ("-c", "--config"):
-            config_paths.push(0, a)
+            config_paths.insert(0, a)
         elif o in ("-f", "--foreground"):
             foreground = True
         elif o in ("-a", "--auth"):
