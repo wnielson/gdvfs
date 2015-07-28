@@ -70,6 +70,12 @@ def full_path_split(path):
     return segments
 
 def get_timestamp(string):
+    """
+    Returns a timestamp from a date string of the format
+    '2015-07-28T16:33:27.240599Z'.  Note that we need to convert the time zone
+     from "Z" (Zulu, which is UTC) to "GMT" so that `strptime` doesn't yell at
+     us.
+    """
     return calendar.timegm(time.strptime(string.replace("Z", "GMT"), '%Y-%m-%dT%H:%M:%S.%f%Z'))
 
 class Node:
