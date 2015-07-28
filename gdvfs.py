@@ -8,7 +8,6 @@ import calendar
 import ConfigParser
 import errno
 import getopt
-import httplib2
 import logging
 import os
 import re
@@ -22,6 +21,7 @@ import urllib2
 # Google stuff
 from apiclient import errors
 from apiclient.discovery import build
+import httplib2
 from oauth2client.client import FlowExchangeError, OAuth2WebServerFlow
 from oauth2client.file import Storage
 from oauth2client.tools import run
@@ -52,7 +52,7 @@ CONFIG_DEFAULT  = {
     "volicon":          ""
 }
 
-__version__ = "0.3.1"
+__version__ = "0.3.5"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
