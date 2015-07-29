@@ -29,12 +29,15 @@ from oauth2client.tools import run
 # Fuse
 import fuse
 
+__version__ = "0.3.7"
+__author__  = "Weston Nielson <wnielson@github>"
+
 log = logging.getLogger("gdvfs")
 
 CONFIG_SECTION  = "gdvfs"
 CONFIG_DEFAULT  = {
     "include_formats":  "mp4,flv,webm",
-    "include_original": "True",
+    "include_original": "/",
     "cache_duration":   "30",
     "root_cache":       "900",
     "mount_name":       "GDVFS",
@@ -52,9 +55,6 @@ CONFIG_DEFAULT  = {
     "volicon":          "",
     "lookup_threads":   "True"
 }
-
-__version__ = "0.3.6"
-__author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
     """
@@ -102,6 +102,14 @@ class Node:
 
     def __getitem__(self, key):
         return self.children.get(key, None)
+
+    def get_path(self):
+        paths = []
+        node  = self
+        while node:
+            paths.insert(0, node.title)
+            node = node.parent
+        return os.path.join(*paths)
 
     def lstat(self):
         if not self.attribs:
@@ -219,7 +227,18 @@ class Node:
                     for t in threads:
                       t.join()
 
-            if self._drive._config.getboolean(CONFIG_SECTION, "include_original"):
+            # See if we need to include the original video
+            include_original = False
+            original_include_paths = self._drive._config.get(CONFIG_SECTION, "include_original")
+            if original_include_paths:
+                # XXX: This could break on paths that include commas
+                curr_path = self.get_path()
+                for path in original_include_paths.split(","):
+                    if path in curr_path:
+                        include_original = True
+                        break
+
+            if include_original:
                 log.debug("Adding original video")
                 self.children[self.title] = Node(self.id, self.title, self, self._drive)
                 self.children[self.title].attribs = self.attribs.copy()

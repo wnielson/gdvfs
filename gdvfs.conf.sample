@@ -4,9 +4,10 @@
 #
 mount_dir = /mnt/gdvfs
 
-# Include the original video file.
+# Comma separated list of paths for which the original file should be included.
+# The default "/" includes originals for all videos.
 #
-include_original = True
+#include_original = /
 
 # File extensions to include in directory listings.
 #
@@ -42,6 +43,10 @@ log_path = ./gdvfs.log
 # Run in the foreground (don't daemonize)
 #
 #foreground = False
+
+# Use threads to increase directory listings for encoded videos.
+#
+#lookup_threads = False
 
 ################################################################################
 #
