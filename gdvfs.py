@@ -49,10 +49,11 @@ CONFIG_DEFAULT  = {
     "allow_other":      "False",
     "allow_root":       "False",
     "local":            "False",
-    "volicon":          ""
+    "volicon":          "",
+    "lookup_threads":   "True"
 }
 
-__version__ = "0.3.5"
+__version__ = "0.3.6"
 __author__  = "Weston Nielson <wnielson@github>"
 
 def full_path_split(path):
@@ -108,7 +109,9 @@ class Node:
 
         if self.video_attribs and not self.video_attribs.has_key("bytes"):
             log.debug("Getting file size for video: %s" % self.title)
-            res = urllib.urlopen(self.video_attribs.get("url"))
+            req  = urllib2.Request(self.video_attribs.get("url"))
+            res  = urllib2.urlopen(req)
+
             self.video_attribs["bytes"] = int(res.headers.get("content-length", 0))
 
         if self.video_attribs and self.video_attribs.has_key("bytes"):
@@ -180,10 +183,12 @@ class Node:
             if len(videos) > 0:
                 base_title, old_ext = os.path.splitext(self.title)
 
+                use_threads = self._drive._config.getboolean(CONFIG_SECTION, "lookup_threads")
+
                 # Add the alternate formats
+                threads = []
                 for video in videos:
                     title = "%s-%sp.%s" % (base_title, video.get("height"), video.get("extension").lower())
-
                     if not self.children.has_key(title):
                         # If this is a new video, add it
                         log.debug("Adding child: %s" % title)
@@ -199,6 +204,20 @@ class Node:
                             "mimeType": self.attribs.get("originalMimeType")
                         })
                         self.children[title].attribs.pop("bytes", 0)
+
+                        # XXX: Testing threaded lookups.  In my testing, this is roughly
+                        #      2.5x faster than the non-threaded version.
+                        if use_threads:
+                            log.debug("Starting lstat thread")
+                            t = threading.Thread(target=self.children[title].lstat)
+                            t.start()
+                            threads.append(t)
+
+                if use_threads:
+                    # Wait for all threads to finish
+                    log.debug("Waiting for lstat threads")
+                    for t in threads:
+                      t.join()
 
             if self._drive._config.getboolean(CONFIG_SECTION, "include_original"):
                 log.debug("Adding original video")
