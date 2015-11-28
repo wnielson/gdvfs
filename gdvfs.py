@@ -522,8 +522,6 @@ class GDVFS(fuse.Operations):
 
     # Disable unused operations
     flush       = None
-    getxattr    = None
-    listxattr   = None
     open        = None
     opendir     = None
     releasedir  = None
@@ -536,6 +534,22 @@ class GDVFS(fuse.Operations):
         if self.opened.has_key(path):
             self.opened[path].close()
             self.opened.pop(path, None)
+
+    def listxattr(self, path):
+        return ["user.url"]
+
+    def getxattr(self, path, name):
+        head, tail  = os.path.split(path)
+        folder      = self.drive.list_dir(head)
+
+        if folder and folder.has_key(tail):
+            node = folder[tail]
+            for i in range(3):
+                try:
+                    return node.get_video_url()
+                except:
+                    node.refresh_url()
+        return ""
 
     def read(self, path, length, offset, fh):
         log.debug("read: %s:%d -> %d +%d" % (path, fh, offset, length))
