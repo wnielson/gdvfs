@@ -24,7 +24,7 @@ from apiclient.discovery import build
 import httplib2
 from oauth2client.client import FlowExchangeError, OAuth2WebServerFlow
 from oauth2client.file import Storage
-from oauth2client.tools import run
+from oauth2client.tools import run_flow as run
 
 # Fuse
 import fuse
