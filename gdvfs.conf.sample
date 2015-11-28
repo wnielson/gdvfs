@@ -13,6 +13,12 @@ mount_dir = /mnt/gdvfs
 #
 include_formats = mp4,flv,webm
 
+# Files to consider as videos but that haven't been converted yet.  This
+# will stop videos with these extensions as showing up as available before
+# they have been converted by Google.
+#
+#video_extensions = mkv,avi,mp4
+
 # Location to log information to.
 #
 log_path = ./gdvfs.log
