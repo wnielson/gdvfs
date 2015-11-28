@@ -24,12 +24,12 @@ from apiclient.discovery import build
 import httplib2
 from oauth2client.client import FlowExchangeError, OAuth2WebServerFlow
 from oauth2client.file import Storage
-from oauth2client.tools import run
+from oauth2client.tools import run_flow as run
 
 # Fuse
 import fuse
 
-__version__ = "0.3.7"
+__version__ = "0.3.8"
 __author__  = "Weston Nielson <wnielson@github>"
 
 log = logging.getLogger("gdvfs")
@@ -38,6 +38,7 @@ CONFIG_SECTION  = "gdvfs"
 CONFIG_DEFAULT  = {
     "include_formats":  "mp4,flv,webm",
     "include_original": "/",
+    "video_extensions": "mkv,avi,mp4",
     "cache_duration":   "30",
     "root_cache":       "900",
     "mount_name":       "GDVFS",
@@ -256,7 +257,7 @@ class Node:
                 try:
                     param = {
                         "q":            "'%s' in parents and trashed=false" % self.id,
-                        "fields":       "items(id,mimeType,title,createdDate,modifiedDate,fileSize,videoMediaMetadata,downloadUrl)",
+                        "fields":       "items(id,mimeType,title,createdDate,modifiedDate,fileSize,videoMediaMetadata,downloadUrl,fileExtension)",
                         "maxResults":   1000
                     }
 
@@ -303,7 +304,8 @@ class Node:
                     log.error("Couldn't update mtime")
 
                 # If the "videoMediaMetadata" key is present, then this is a video
-                if node.attribs.has_key("videoMediaMetadata"):
+                video_exts = [v.strip() for v in self._drive._config.get(CONFIG_SECTION, "video_extensions").lower().split(",")]
+                if node.attribs.has_key("videoMediaMetadata") or node.attribs.get("fileExtension") in video_exts:
                     # Since this is a video, we need to do a few things:
                     #   (1) Change this node from a video to a directory
                     #   (2) Add this video as a child to the directory node
