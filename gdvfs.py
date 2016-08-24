@@ -29,7 +29,7 @@ from oauth2client.tools import run_flow as run
 # Fuse
 import fuse
 
-__version__ = "0.3.8"
+__version__ = "0.3.9"
 __author__  = "Weston Nielson <wnielson@github>"
 
 log = logging.getLogger("gdvfs")
