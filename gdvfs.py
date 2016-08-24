@@ -597,6 +597,7 @@ class GDVFS(fuse.Operations):
                         url = node.get_video_url()
                         hdrs = {
                             'Authorization': 'Bearer %s' % self.drive._creds.access_token,
+                            'Cookie':         self.drive._cookies,
                             'Range':         'bytes=%d-' % (offset)}
                         req  = urllib2.Request(url, None, hdrs)
                         fh   = urllib2.urlopen(req)
