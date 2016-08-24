@@ -118,7 +118,11 @@ class Node:
 
         if self.video_attribs and not self.video_attribs.has_key("bytes"):
             log.debug("Getting file size for video: %s" % self.title)
-            req  = urllib2.Request(self.video_attribs.get("url"))
+            hdrs = {
+                'Authorization': 'Bearer %s' % self._drive._creds.access_token,
+                'Cookie': self._drive._cookies
+            }
+            req  = urllib2.Request(self.video_attribs.get("url"), None, hdrs)
             res  = urllib2.urlopen(req)
 
             self.video_attribs["bytes"] = int(res.headers.get("content-length", 0))
@@ -452,6 +456,7 @@ class Drive(object):
         for i in range(3):
             try:
                 status, response_data = http.request(url, "GET")
+                self._cookies = status['set-cookie']
                 break
             except Exception, e:
                 log.error("Error get_urls_for_docid: '%s' ... trying again" % str(e))
@@ -538,7 +543,7 @@ class GDVFS(fuse.Operations):
             self.opened.pop(path, None)
 
     def listxattr(self, path):
-        return ["user.url"]
+        return ["user.url", "user.cookie"]
 
     def getxattr(self, path, name):
         head, tail  = os.path.split(path)
@@ -546,11 +551,14 @@ class GDVFS(fuse.Operations):
 
         if folder and folder.has_key(tail):
             node = folder[tail]
-            for i in range(3):
-                try:
-                    return node.get_video_url()
-                except:
-                    node.refresh_url()
+            if name == "user.url":
+                for i in range(3):
+                    try:
+                        return node.get_video_url()
+                    except:
+                        node.refresh_url()
+            elif name == "user.cookie":
+                return getattr(self.drive, '_cookies', '')
         return ""
 
     def read(self, path, length, offset, fh):
